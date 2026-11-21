@@ -1,0 +1,9 @@
+- fastapi (O construtor da API): É o framework web que transforma funções comuns em Python em endereços de internet (rotas, como /analisar). É ele quem permite que o seu frontend (HTML/JS) envie o link do vídeo para o Python e receba a resposta organizada em formato JSON. Como bônus, ele cria automaticamente uma página visual de testes para o seu servidor.
+
+- uvicorn (O servidor web): O FastAPI define as regras de como responder aos pedidos, mas não sabe ficar "escutando" a rede sozinho. O Uvicorn é o servidor ASGI (um padrão moderno e rápido do Python) que coloca o FastAPI no ar, abre uma porta na sua máquina (como a localhost:8000) e gerencia a comunicação de rede entre o navegador e o seu código.
+
+- youtube-transcript-api (O extrator de legendas): Usar a API oficial de dados do YouTube exigiria configurar credenciais complexas e lidar com burocracia de autenticação. Essa biblioteca vai direto na faixa de legendas públicas do vídeo (inclusive as geradas automaticamente pelo YouTube) e devolve uma lista em Python com o texto e o segundo exato (start) de cada frase — tudo sem baixar um único megabyte de vídeo para o seu computador.
+
+- google-genai (O SDK oficial do Gemini): É o kit de desenvolvimento oficial do Google para conectar programas Python aos modelos Gemini. Em vez de você ter que montar requisições HTTP na mão e configurar cabeçalhos de segurança manualmente, essa biblioteca oferece comandos prontos para enviar o prompt, escolher o modelo e exigir que a resposta volte em formato JSON estruturado.
+
+- python-dotenv (O leitor do cofre): Por padrão, o Python ignora arquivos .env. Essa biblioteca procura o arquivo .env na raiz do projeto, lê a sua GEMINI_API_KEY e a carrega na memória temporária do sistema (variáveis de ambiente), permitindo que o código use a chave sem ela ficar exposta nos arquivos .py.
