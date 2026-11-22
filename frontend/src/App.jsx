@@ -2,7 +2,7 @@ import { useState } from "react";
 import Header from "./components/Header";
 import Main from "./components/Main";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/analisar";
+const API_URL = import.meta.env.VITE_API_URL || "https://cut-hunter.onrender.com/analisar";
 
 function extrairIdVideo(url) {
   const regex = /(?:youtube\.com\/(?:watch\?v=|live\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/; // Expressão regular para capturar o ID do vídeo do YouTube
@@ -41,8 +41,14 @@ export default function App() {
 
     try {
       const resposta = await fetch(`${API_URL}?url=${encodeURIComponent(url.trim())}`); // Faz a requisição para a API com a URL do vídeo
-      const dados = await resposta.json(); // Converte a resposta em JSON
+      const textoResposta = await resposta.text();
 
+      let dados;
+      try {
+        dados = JSON.parse(textoResposta);
+      } catch {
+        throw new Error("O servidor ainda está acordando ou retornou uma resposta inválida. Tente novamente em alguns segundos.");
+      }
       if (!resposta.ok) {
         throw new Error(dados.detail || "Erro ao analisar o vídeo.");
       }
