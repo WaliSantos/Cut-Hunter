@@ -5,8 +5,10 @@
 # devolve os cortes prontos
 
 
+import os
 import time
 import logging
+import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,7 +40,7 @@ class Corte(BaseModel):
 
 class ListaDeCortes(BaseModel):
     cortes: list[Corte]
-class TextoManual(BaseModel):
+
     texto: str
 # instanciando o cliente da API da GenAI com a chave de API do arquivo .env
 client = genai.Client() 
@@ -51,12 +53,45 @@ def extrair_id_video(url_ou_id: str) -> str:
 
     parsed = urlparse(texto) # parseando a url para extrair o id do vídeo
 
-    if parsed.hostname in ("www.youtube.be", "youtube.be"):
+    if parsed.hostname in ("www.youtu.be", "youtu.be"):
         return parsed.path.lstrip("/")
     if "/live" in parsed.path or "/shorts" in parsed.path:
         return parsed.path.rstrip("/").split("/")[-1]
 
     return parse_qs(parsed.query).get("v", [texto])[0] 
+
+def buscar_transcricao(video_id: str) -> list[dict]:
+    """
+    Se houver SUPADATA_API_KEY (no Render), usa a Supadata para evitar bloqueio de IP.
+    Caso contrário (no PC local), usa a youtube-transcript-api gratuitamente.
+    """
+    supadata_key = os.getenv("SUPADATA_API_KEY") # pega a chave da Supadata do arquivo .env
+
+    if supadata_key:
+        url_limpa = f"https://www.youtube.com/watch?v={video_id}" # cria a url limpa do vídeo para enviar para a Supadata
+        resp = requests.get(
+            "https://api.supadata.ai/v1/transcript",
+            params={"url": url_limpa, "lang": "pt"},
+            headers={"x-api-key": supadata_key},
+            timeout=30,
+        ) # faz a requisição para a Supadata para buscar a transcrição do vídeo
+        resp.raise_for_status() # levanta uma exceção se a requisição falhar
+        dados = resp.json() # pega o conteúdo da resposta em formato JSON
+
+        conteudo = dados.get("content", []) # pega o conteúdo da transcrição do vídeo, que é uma lista de dicionários com 'offset' e 'text'
+        if not isinstance(conteudo, list): # garante que o conteúdo seja uma lista; se não for, retorna uma lista vazia
+            return []
+
+        # A Supadata envia 'offset' em milissegundos; dividimos por 1000 para virar segundos
+        return [
+            {"start": int(item["offset"] / 1000), "text": item["text"]}
+            for item in conteudo
+        ]
+
+    # Modo local 
+    ytt = YouTubeTranscriptApi()
+    transcript = ytt.fetch(video_id, languages=["pt", "pt-BR"])
+    return [{"start": int(trecho.start), "text": trecho.text} for trecho in transcript]
 
 def chamar_gemini_com_fallback(prompt: str):
     modelos_tentativa = ["gemini-3.8-flash"]
@@ -94,7 +129,7 @@ def chamar_gemini_com_fallback(prompt: str):
             return resposta
         except Exception as erro:
             ultimo_erro = erro
-            logging.warning(f"⚠️ Modelo {modelo} falhou ou está congestionado. Tentando próximo...")
+            logging.warning(f" Modelo {modelo} falhou ou está congestionado. Tentando próximo...")
             continue
 
     raise ultimo_erro
@@ -106,15 +141,22 @@ def analisar_video(url: str):
 
     try: 
         t0 = time.perf_counter()
-        ytt = YouTubeTranscriptApi() # instanciando a API de transcrição do YouTube
-        transcript = ytt.fetch(video_id, languages=["pt, pt-BR"]) 
-        # print(f"YouTube levou: {time.perf_counter() - t0:.2f}s")
-        logging.info(f"YouTube levou: {time.perf_counter() - t0:.2f}s")
+        # ytt = YouTubeTranscriptApi() # instanciando a API de transcrição do YouTube
+        # transcript = ytt.fetch(video_id, languages=["pt", "pt-BR"]) 
+
+        trechos = buscar_transcricao(video_id) # buscando a transcrição do vídeo
+
+        logging.info(f"Busca da legenda levou: {time.perf_counter() - t0:.2f}s")
     except Exception as erro:
-        logging.error(f"Falha ao buscar legenda no YouTube ({video_id}): {erro}")
+        logging.error(f"Falha ao buscar legenda ({video_id}): {erro}")
         raise HTTPException(
             status_code = 400,
-            detail = f"Não foi possível obter a legenda..."
+            detail = f"Não foi possível obter a legenda deste vídeo. Verifique se é público e possui legendas"
+        )
+    if not trechos:
+        raise HTTPException(
+            status_code=400,
+            detail="A transcrição veio vazia para este vídeo."
         )
     
     # linhas = [f"[{int(trecho.start)}s] {trecho.text}" for trecho in transcript]
@@ -124,12 +166,12 @@ def analisar_video(url: str):
     texto_atual = []
     inicio_bloco = None
 
-    for trecho in transcript:
+    for trecho in trechos:
         if inicio_bloco is None:
-            inicio_bloco = int(trecho.start)
-        texto_atual.append(trecho.text.strip())
+            inicio_bloco = trecho["start"]
+        texto_atual.append(trecho["text"].strip())
 
-        if int(trecho.start) - inicio_bloco >= 60:
+        if trecho["start"] - inicio_bloco >= 60:
             blocos.append(f"[{inicio_bloco}s] {' '.join(texto_atual)}")
             texto_atual = []
             inicio_bloco = None
@@ -139,8 +181,6 @@ def analisar_video(url: str):
 
     texto_completo = "\n".join(blocos)
 
-    if not payload.texto.strip():
-        raise HTTPException(status_code=400, detail="Cole o texto da transcrição antes de analisar.")
 
     prompt = f"""
         Você é um editor sênior de cortes para o canal 'Canto Rubro-Negro', focado no Esporte Clube Vitória.
