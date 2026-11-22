@@ -17,6 +17,7 @@ from google import genai
 from google.genai import types
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import YouTubeTranscriptApi 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 logging.basicConfig(level=logging.INFO)
 
@@ -93,7 +94,7 @@ def buscar_transcricao(video_id: str) -> list[dict]:
     transcript = ytt.fetch(video_id, languages=["pt", "pt-BR"])
     return [{"start": int(trecho.start), "text": trecho.text} for trecho in transcript]
 
-def chamar_gemini_com_fallback(prompt: str):
+# def chamar_gemini_com_fallback(prompt: str):
     modelos_tentativa = ["gemini-3.8-flash"]
 
     # Descobre automaticamente outros modelos Flash ativos na sua conta como reserva
@@ -134,6 +135,56 @@ def chamar_gemini_com_fallback(prompt: str):
 
     raise ultimo_erro
 
+def chamar_gemini_com_fallback(prompt: str):
+    modelos_tentativa = ["gemini-3.8-flash"]
+
+    # Descobre automaticamente outros modelos Flash ativos na sua conta (ex: variantes lite)
+    try:
+        extras = []
+        for m in client.models.list():
+            nome = m.name.replace("models/", "")
+            if (
+                "flash" in nome
+                and nome not in modelos_tentativa
+                and not any(x in nome for x in ["2.5", "2.0", "1.5", "image", "audio", "tts", "live"])
+            ):
+                extras.append(nome)
+        # Coloca variantes 'lite' logo após o principal por serem mais rápidas
+        extras.sort(key=lambda n: 0 if "lite" in n else 1)
+        modelos_tentativa.extend(extras)
+    except Exception:
+        pass
+
+    ultimo_erro = None
+    for modelo in modelos_tentativa:
+        try:
+            logging.info(f"Tentando gerar cortes com: {modelo}")
+            config_kwargs = {
+                "response_mime_type": "application/json",
+                "response_schema": ListaDeCortes,
+            }
+            if "3." in modelo:
+                config_kwargs["thinking_config"] = {"thinking_level": "LOW"}
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                futuro = executor.submit(
+                    client.models.generate_content,
+                    model=modelo,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+                resposta = futuro.result(timeout=35)
+
+            logging.info(f"Sucesso com o modelo: {modelo}")
+            return resposta
+        except FuturesTimeoutError:
+            ultimo_erro = TimeoutError(f"Modelo {modelo} demorou mais de 35s.")
+            logging.warning(f"Modelo {modelo} excedeu 35s. Tentando próximo...")
+        except Exception as erro:
+            ultimo_erro = erro
+            logging.warning(f"Modelo {modelo} falhou ou está congestionado. Tentando próximo...")
+
+    raise ultimo_erro
 @app.get("/analisar", response_model=ListaDeCortes)
 def analisar_video(url: str):
     inicio_total = time.perf_counter()
@@ -193,7 +244,7 @@ def analisar_video(url: str):
         - Classifique a 'categoria' apenas como: Polêmica, Análise Tática, Resenha ou Desabafo.
 
         Transcrição da live:
-        {texto_completo[:60000]}
+        {texto_completo[:250000]}
         """
 
     try:
