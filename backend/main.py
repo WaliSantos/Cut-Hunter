@@ -38,7 +38,8 @@ class Corte(BaseModel):
 
 class ListaDeCortes(BaseModel):
     cortes: list[Corte]
-
+class TextoManual(BaseModel):
+    texto: str
 # instanciando o cliente da API da GenAI com a chave de API do arquivo .env
 client = genai.Client() 
 
@@ -106,9 +107,11 @@ def analisar_video(url: str):
     try: 
         t0 = time.perf_counter()
         ytt = YouTubeTranscriptApi() # instanciando a API de transcrição do YouTube
-        transcript = ytt.fetch(video_id, languages=["pt"])
-        print(f"YouTube levou: {time.perf_counter() - t0:.2f}s")
+        transcript = ytt.fetch(video_id, languages=["pt, pt-BR"]) 
+        # print(f"YouTube levou: {time.perf_counter() - t0:.2f}s")
+        logging.info(f"YouTube levou: {time.perf_counter() - t0:.2f}s")
     except Exception as erro:
+        logging.error(f"Falha ao buscar legenda no YouTube ({video_id}): {erro}")
         raise HTTPException(
             status_code = 400,
             detail = f"Não foi possível obter a legenda..."
@@ -135,6 +138,9 @@ def analisar_video(url: str):
         blocos.append(f"[{inicio_bloco}s] {' '.join(texto_atual)}")
 
     texto_completo = "\n".join(blocos)
+
+    if not payload.texto.strip():
+        raise HTTPException(status_code=400, detail="Cole o texto da transcrição antes de analisar.")
 
     prompt = f"""
         Você é um editor sênior de cortes para o canal 'Canto Rubro-Negro', focado no Esporte Clube Vitória.
