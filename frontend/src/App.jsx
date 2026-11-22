@@ -2,7 +2,7 @@ import { useState } from "react";
 import Header from "./components/header";
 import Main from "./components/Main";
 
-const API_URL = "http://127.0.0.1:8000/analisar";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/analisar";
 
 function extrairIdVideo(url) {
   const regex = /(?:youtube\.com\/(?:watch\?v=|live\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/; // Expressão regular para capturar o ID do vídeo do YouTube

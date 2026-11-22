@@ -17,7 +17,9 @@ function Main({
         {loading && (
           <div className="text-center py-12 px-4 bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-400">
             <div className="w-9 h-9 border-3 border-zinc-800 border-t-red-600 rounded-full animate-spin mx-auto mb-4"></div>
-            <p>Lendo a transcrição e analisando os melhores momentos com IA... (cerca de 15s)</p>
+            <p>Lendo a transcrição e analisando os melhores momentos com IA... 
+              
+            </p>
           </div>
         )}
 

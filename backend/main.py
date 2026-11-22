@@ -147,7 +147,7 @@ def analisar_video(url: str):
         - Classifique a 'categoria' apenas como: Polêmica, Análise Tática, Resenha ou Desabafo.
 
         Transcrição da live:
-        {texto_completo[:22000]}
+        {texto_completo[:60000]}
         """
 
     try:
